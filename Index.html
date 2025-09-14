@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Internship & Placement Tracker</title>
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React + ReactDOM from CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script crossorigin src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+</head>
+<body class="bg-gray-50">
+  <div id="root"></div>
+
+  <!-- Your React App -->
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const STORAGE_KEY = "ipt_data_v1";
+    const nowISO = () => new Date().toISOString();
+
+    const defaultSeed = () => ({
+      users: [
+        { id: "student:alice", name: "Alice Student", role: "student", email: "alice@example.com" },
+        { id: "faculty:bob", name: "Bob Faculty", role: "faculty", email: "bob@example.com" },
+        { id: "po:carol", name: "Carol PO", role: "placement", email: "carol@example.com" },
+      ],
+      drives: [
+ {
+          id: "drive:1",
+          title: "Summer Software Intern",
+          company: "Acme Tech",
+          postedBy: "po:carol",
+          postedAt: nowISO(),
+          deadline: new Date(Date.now() + 1000 * 60 * 60 * 24 * 10).toISOString(),
+          description: "3-month internship for software engineering interns.",
+          shortlists: [],
+          results: {},
+        },
+      ],
+      applications: [],
+      activity: [],
+    });
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          const seed = defaultSeed();
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
+          return seed;
+        }
+        return JSON.parse(raw);
+      } catch {
+        const seed = defaultSeed();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
+        return seed;
+      }
+    }
+
+    function saveState(state) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function uid(prefix = "id") {
+      return ${prefix}:${Math.random().toString(36).slice(2, 9)};
+    }
+ function App() {
+      const [data, setData] = useState(loadState);
+      const [currentUserId, setCurrentUserId] = useState(data.users[0].id);
+      const [filter, setFilter] = useState("all");
+      const [search, setSearch] = useState("");
+
+      useEffect(() => saveState(data), [data]);
+      const currentUser = data.users.find((u) => u.id === currentUserId);
+
+      function addActivity(text) {
+        const entry = { id: uid("act"), text, at: nowISO() };
+        setData((d) => ({ ...d, activity: [entry, ...d.activity] }));
+      }
+
+      function createDrive(payload) {
+        const drive = {
+          id: uid("drive"),
+          title: payload.title,
+          company: payload.company,
+          postedBy: currentUser.id,
+          postedAt: nowISO(),
+          deadline: payload.deadline,
+          description: payload.description,
+          shortlists: [],
+          results: {},
+        };
+        setData((d) => ({ ...d, drives: [drive, ...d.drives] }));
+        addActivity(${currentUser.name} posted drive "${payload.title}" @ ${payload.company});
+      }
+
+      function applyToDrive(driveId) {
+        const already = data.applications.find((a) => a.driveId === driveId && a.userId === currentUser.id);
+  if (already) return;
+        const app = { id: uid("app"), driveId, userId: currentUser.id, appliedAt: nowISO(), status: "pending" };
+        setData((d) => ({ ...d, applications: [app, ...d.applications] }));
+        addActivity(${currentUser.name} applied to ${driveId});
+      }
+
+      function shortlistCandidate(driveId, userId) {
+        setData((d) => {
+          const drives = d.drives.map((dr) => {
+            if (dr.id !== driveId) return dr;
+            if (dr.shortlists.includes(userId)) return dr;
+            return { ...dr, shortlists: [...dr.shortlists, userId] };
+          });
+          return { ...d, drives };
+        });
+        addActivity(${currentUser.name} shortlisted ${userId} for ${driveId});
+      }
+
+      function setResult(driveId, userId, result) {
+        setData((d) => {
+          const drives = d.drives.map((dr) => {
+            if (dr.id !== driveId) return dr;
+            return { ...dr, results: { ...dr.results, [userId]: result } };
+          });
+          const applications = d.applications.map((a) => {
+            if (a.driveId === driveId && a.userId === userId) return { ...a, status: result };
+            return a;
+          });
+          return { ...d, drives, applications };
+        });
+        addActivity(${currentUser.name} marked ${userId} as ${result} for ${driveId});
+      }
+
+function addUser(name, role, email) {
+        const newUser = { id: uid(role), name, role, email };
+        setData((d) => ({ ...d, users: [...d.users, newUser] }));
+        addActivity(Added user ${name} (${role}));
+        return newUser;
+      }
+
+      const drivesFiltered = data.drives.filter((dr) => {
+        if (filter === "open") return new Date(dr.deadline) > new Date();
+        if (filter === "closed") return new Date(dr.deadline) <= new Date();
+        return true;
+      }).filter((dr) => {
+        if (!search) return true;
+        const s = search.toLowerCase();
+        return dr.title.toLowerCase().includes(s) || dr.company.toLowerCase().includes(s) || (dr.description || "").toLowerCase().includes(s);
+      });
+
+      function getApplicationsForDrive(driveId) {
+        return data.applications.filter((a) => a.driveId === driveId).map((a) => ({ ...a, user: data.users.find((u) => u.id === a.userId) }));
+      }
+
+      function getUserApplications(userId) {
+        return data.applications.filter((a) => a.userId === userId).map((a) => ({ ...a, drive: data.drives.find((d) => d.id === a.driveId) }));
+      }
+
+      function Header() {
+        return (
+          <header className="flex items-center justify-between py-4">
+            <h1 className="text-2xl font-bold">Internship & Placement Tracker</h1>
+            <div className="flex items-center gap-3">
+              <select value={currentUserId} onChange={(e) => setCurrentUserId(e.target.value)} className="border rounded p-1">
+ {data.users.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name} — {u.role}</option>
+                ))}
+              </select>
+              <span className="text-sm italic text-gray-600">{currentUser.role}</span>
+            </div>
+          </header>
+        );
+      }
+
+      function DriveCard({ drive }) {
+        const myApp = data.applications.find((a) => a.driveId === drive.id && a.userId === currentUser.id);
+        const isShortlisted = drive.shortlists.includes(currentUser.id);
+        const myResult = drive.results?.[currentUser.id];
+
+        return (
+          <div className="border rounded p-4 bg-white shadow-sm">
+            <h3 className="text-lg font-semibold">{drive.title}</h3>
+            <div className="text-sm text-gray-600">{drive.company}</div>
+            <p className="mt-3 text-sm">{drive.description}</p>
+            <div className="mt-3 flex gap-2 items-center">
+              {currentUser.role === "student" && (
+                <>
+                  {myApp ? (
+                    <span className="px-3 py-1 rounded bg-gray-100 text-sm">Applied — {myApp.status}</span>
+                  ) : (
+                    <button className="px-3 py-1 rounded bg-blue-600 text-white text-sm" onClick={() => applyToDrive(drive.id)}>Apply</button>
+                  )}
+                  {isShortlisted && <span className="px-2 py-1 rounded text-sm bg-yellow-100">Shortlisted</span>}
+                  {myResult && <span className="px-2 py-1 rounded text-sm bg-green-100">Result: {myResult}</span>}
+  </>
+              )}
+
+              {(currentUser.role !== "student") && (
+                <>
+                  <button className="px-3 py-1 rounded border text-sm"
+                    onClick={() => {
+                      const someStudent = data.users.find((u) => u.role === "student");
+                      if (someStudent) shortlistCandidate(drive.id, someStudent.id);
+                    }}>Quick Shortlist</button>
+                  <button className="px-3 py-1 rounded border text-sm"
+                    onClick={() => {
+                      const apps = getApplicationsForDrive(drive.id);
+                      if (apps.length) setResult(drive.id, apps[0].user.id, "selected");
+                    }}>Mark Selected</button>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      function DriveList() {
+        return (
+          <section className="space-y-4">
+            <div className="flex gap-2 items-center">
+              <input placeholder="Search drives..." value={search} onChange={(e) => setSearch(e.target.value)} className="border rounded p-2 flex-1" />
+              <select value={filter} onChange={(e) => setFilter(e.target.value)} className="border rounded p-1">
+                <option value="all">All</option>
+                <option value="open">Open</option>
+                <option value="closed">Closed</option>
+              </select>
+            </div>
+ <div className="grid md:grid-cols-2 gap-4">
+              {drivesFiltered.map((d) => <DriveCard key={d.id} drive={d} />)}
+              {drivesFiltered.length === 0 && <div className="text-gray-500">No drives match.</div>}
+            </div>
+          </section>
+        );
+      }
+
+      return (
+        <div className="min-h-screen bg-gray-50 p-6">
+          <div className="max-w-6xl mx-auto">
+            <Header />
+            <main className="mt-6">
+              <DriveList />
+            </main>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
+
